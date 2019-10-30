@@ -3,9 +3,7 @@ import os
 import sys
 import logging
 import tarfile
-import hashlib
 import argparse
-import subprocess
 from functools import lru_cache
 import boto3
 import csv
@@ -21,7 +19,6 @@ default_file_name = 'sample.tar.gz'
 buffer_size = 4096
 split_size = '2M'
 default_suffix = 'multipart_upload'
-vault_name = 'glacier_vault'
 account_id = '-'
 archive_db_file_path = ''
 
@@ -29,14 +26,15 @@ archive_db_file_path = ''
 @lru_cache(maxsize=1)
 def get_commandline_args():
     parser.add_argument('file_list', nargs = '+', action = 'store', help = 'A list of path of files and/or directories')
-    parser.add_argument('--archive_name', action = 'store', help = 'Name to be used for the archieved file')
+    parser.add_argument('--archive-name', action = 'store', help = 'Name to be used for the archieved file')
+    parser.add_argument('vault_name', action = 'store', help = 'Vault name where the archived file shall be stored.')
     args = parser.parse_args()
     return args
 
 
 def get_archive_candidate_list():
     commandline_args = get_commandline_args()
-    candidate_list = commandline_args.list
+    candidate_list = commandline_args.file_list
     if len(candidate_list) == 0:
       logging.error('No filename or directory name is provided in the argument list.')
       sys.exit()
@@ -63,7 +61,7 @@ def create_archive(candidate_list, file_name):
     return file_name
 
 
-def upload_archive(file_list):
+def upload_archive(file_list, vault_name):
     responses = []
     vault = glacier.Vault(account_id, vault_name)
     for f in file_list:
@@ -92,10 +90,15 @@ def store_archive_info(id, timestamp):
 
 
 if __name__ == '__main__':
-    file_name = create_archive(get_archive_candidate_list(), default_file_name)
-    responses = upload_archive([file_name])
+    vault_name = get_commandline_args().vault_name
+    file_name = get_commandline_args().archive_name
+
+    if not file_name:
+        file_name = default_file_name
+    archived_file_name = create_archive(get_archive_candidate_list(), file_name)
+
+    responses = upload_archive([archived_file_name], vault_name)
     for response in responses:
-        print(response)
         id = response.id
         timestamp = datetime.now()
         store_archive_info(id, timestamp)
